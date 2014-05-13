@@ -1,7 +1,11 @@
-#from yapsy.IPlugin import IPlugin
-
+"""
+    Directory Caching system.
+    
+    Used to speed up 
+"""
 import os
 import os.path
+import re
 from stat import ST_MODE, ST_INO, ST_DEV, ST_NLINK, ST_UID, ST_GID, \
                     ST_SIZE, ST_ATIME, ST_MTIME, ST_CTIME
                     
@@ -13,24 +17,29 @@ import scandir
 
 plugin_name = "dir_cache"
 
-def natural_sort(l): 
+#####################################################
+# Source: http://nedbatchelder.com/blog/200712/human_sorting.html
+# Author: Ned Batchelder
+def tryint(s):
     """
-        http://stackoverflow.com/questions/4836710/
-                does-python-have-a-built-in-function-for-string-natural-sort
+    Convert to Integer
     """
-    import re
-    convert = lambda text: int(text) if text.isdigit() else text.lower() 
-    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
-    return sorted(l, key=alphanum_key)
-    
-def fix_doubleslash(fullpathname):
-    """
-    Remove the Double Slashing that seems to occur.
-    """
-    while fullpathname.find("//") != -1:
-        fullpathname = fullpathname.replace("//", "/")
-    return fullpathname
+    try:
+        return int(s)
+    except:
+        return s
 
+def alphanum_key(s):
+    """ Turn a string into a list of string and number chunks.
+        "z23a" -> ["z", 23, "a"]
+    """
+    return [tryint(c) for c in re.split('([0-9]+)', s)]
+
+def sort_nicely(l):
+    """ Sort the given list in the way that humans expect.
+    """
+    l.sort(key=alphanum_key)
+#####################################################
 
 #class PluginOne(IPlugin):
 #
@@ -38,19 +47,12 @@ def fix_doubleslash(fullpathname):
 #        print plugin_name
 
 
-class   UnifiedDirectory:
+class   CachedDirectory:
     """
-    An Attempt to unify directories, and archives into
-    one single storage package.
+    
         
     For example:
         
-            gallery_listings = unified.Unified_Directory()
-#               gallery_listings.populate_file_data_from_filesystem(
-                filepathname = directory_path)
-            print "files: ",gallery_listings.files,"/n/n"
-            print "subdirectories: ",gallery_listings.subdirectories
-            print "Display Gallery for ", gallery_listings.root_path
 
     """
     def __init__(self):
@@ -63,7 +65,8 @@ class   UnifiedDirectory:
 
     def _scan_directory_list(self, scan_directory):
         """
-            Scan's the directory .
+            Scan the directory "scan_directory", and save it to the
+            self.directory_cache dictionary.
             
             Low Level function, intended to be used by the populate function.
         """
@@ -111,7 +114,6 @@ class   UnifiedDirectory:
                     data["number_dirs"] = self.directory_cache\
                         [data["fq_filename"]]["number_dirs"]
                     directories[x.name.lower().strip()] = data
-                    
                 else:
                     self.directory_cache[scan_directory.strip().lower()]\
                         ["number_files"] += 1
@@ -124,10 +126,57 @@ class   UnifiedDirectory:
                         (x.name)[1][1:].lower()
                     files[x.name.lower().strip()] = data
                 counter += 1
-                
         self.directory_cache[scan_directory.strip().lower()]["files"] = files
         self.directory_cache[scan_directory.strip().lower()]\
                 ["dirs"] = directories
         self.directory_cache[scan_directory.strip().lower()]\
                 ["last_scanned_time"] = time.time()
-        return(directories, files)
+        return
+        
+    def directory_in_cache(self, scan_directory):
+        """
+            Pass the target directory 
+        
+            Will return True if the directory is already cached
+            Will return False if the directory is not already cached
+        """
+        scan_directory = os.path.realpath(scan_directory).lower().strip()
+        return scan_directory in self.directory_cache.keys()
+
+    def directory_changed(self, scan_directory):
+        """
+            Pass the target directory as scan_directory.
+        
+            Will return True if the directory has changed, 
+            or does not exist in cache.
+        
+            Returns False, if the directory exists in cache, and
+            has not changed since the last read.
+        
+            This relies on the directory's Modified Time actually
+            being updated since the last update.
+        """
+        if self.directory_in_cache(scan_directory):
+            scan_directory = os.path.realpath(scan_directory).lower().strip()
+            st = os.stat(scan_directory)
+            return st[ST_MTIME] > self.directory_cache[scan_directory]\
+                    ["last_scanned_time"]
+        else:
+            return True
+        
+    def return_sortfiles(self, scan_directory, reverse=False):
+        """
+        Return sorted keys from the Directory cache for scan_directory
+        """
+        scan_directory = os.path.realpath(scan_directory).lower().strip()
+        keys = self.directory_cache[scan_directory]["files"].keys()
+        return sorted(keys, reverse=reverse)
+            
+    def return_sortdirs(self, scan_directory, reverse=False):
+        """
+        Return sorted keys from the Files cache for scan_directory
+        """
+        scan_directory = os.path.realpath(scan_directory).lower().strip()
+        keys = self.directory_cache[scan_directory]["dirs"].keys()
+        return sorted(keys, reverse=reverse)
+        
