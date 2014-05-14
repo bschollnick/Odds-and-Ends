@@ -163,6 +163,12 @@ class   CachedDirectory:
                     ["last_scanned_time"]
         else:
             return True
+    
+    def smart_read(self, scan_directory):
+        scan_directory = os.path.realpath(scan_directory).lower().strip()
+        if self.directory_changed(scan_directory):
+             self._scan_directory_list(scan_directory)
+             
         
     def return_sortfiles(self, scan_directory, reverse=False):
         """
@@ -180,3 +186,16 @@ class   CachedDirectory:
         keys = self.directory_cache[scan_directory]["dirs"].keys()
         return sorted(keys, reverse=reverse)
         
+    def return_dir_count(self, scan_directory):
+        """
+        """
+        scan_directory = os.path.realpath(scan_directory).lower().strip()
+        return self.directory_cache[scan_directory]["number_dirs"]
+
+    def return_file_count(self, scan_directory):
+        """
+        """
+        scan_directory = os.path.realpath(scan_directory).lower().strip()
+        return self.directory_cache[scan_directory]["number_files"]
+
+                
