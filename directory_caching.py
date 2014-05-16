@@ -1,58 +1,35 @@
 """
     Directory Caching system.
     
-    Used to speed up 
+    Used to cache & speed up directory listing.  
+
+Preqs - 
+
+    Scandir - https://github.com/benhoyt/scandir
+
+    scandir is a module which provides a generator version of 
+    os.listdir() that also exposes the extra file information the
+    operating system returns when you iterate a directory.
+    
+    Generally 2-3 (or more) times faster than the standard library.
+    (It's quite noticeable!)
 """
 import os
 import os.path
-import re
 from stat import ST_MODE, ST_INO, ST_DEV, ST_NLINK, ST_UID, ST_GID, \
                     ST_SIZE, ST_ATIME, ST_MTIME, ST_CTIME
                     
 import time
-from datetime import timedelta
-#from dicttime import dicttime
-
 import scandir
 
 plugin_name = "dir_cache"
 
 #####################################################
-# Source: http://nedbatchelder.com/blog/200712/human_sorting.html
-# Author: Ned Batchelder
-def tryint(s):
+class   CachedDirectory(object):
     """
-    Convert to Integer
-    """
-    try:
-        return int(s)
-    except:
-        return s
-
-def alphanum_key(s):
-    """ Turn a string into a list of string and number chunks.
-        "z23a" -> ["z", 23, "a"]
-    """
-    return [tryint(c) for c in re.split('([0-9]+)', s)]
-
-def sort_nicely(l):
-    """ Sort the given list in the way that humans expect.
-    """
-    l.sort(key=alphanum_key)
-#####################################################
-
-#class PluginOne(IPlugin):
-#
-#    def print_name(self):
-#        print plugin_name
-
-
-class   CachedDirectory:
-    """
-    
-        
     For example:
-        
+    
+        To be added shortly.        
 
     """
     def __init__(self):
@@ -71,10 +48,8 @@ class   CachedDirectory:
             Low Level function, intended to be used by the populate function.
         """
         scan_directory = os.path.abspath(scan_directory)
-        parent_dir = os.sep.join(os.path.split(scan_directory)[0:-1])
         directories = {}
         files = {}
-        counter = 0
         self.directory_cache[scan_directory.strip().lower()] = {}
         self.directory_cache[scan_directory.strip().lower()]["number_dirs"] = 0
         self.directory_cache[scan_directory.strip().lower()]["number_files"] = 0
@@ -83,7 +58,8 @@ class   CachedDirectory:
             data = {}
             data["fq_filename"] = os.path.realpath(scan_directory).lower() + \
                     os.sep+x.name.strip().lower()
-            data["parentdirectory"] = parent_dir
+            data["parentdirectory"] = os.sep.join(\
+                    os.path.split(scan_directory)[0:-1])
             data["st_mode"] = st[ST_MODE]
             data["st_inode"] = st[ST_INO]
             data["st_dev"] = st[ST_DEV]
@@ -91,13 +67,11 @@ class   CachedDirectory:
             data["st_uid"] = st[ST_UID]
             data["st_gid"] = st[ST_GID]
             data["compressed"] = st[ST_SIZE]
-            data["st_size"] = st[ST_SIZE]
-            data["st_atime"] = st[ST_ATIME]
-            data["raw_st_mtime"] = st[ST_MTIME]
+            data["st_size"] = st[ST_SIZE]       #10
+            data["st_atime"] = st[ST_ATIME]     #11
+            data["raw_st_mtime"] = st[ST_MTIME] #12
             data["st_mtime"] = time.asctime(time.localtime(st[ST_MTIME]))
             data["st_ctime"] = st[ST_CTIME]
-            data["raw_index"] = counter
-            data["sort_index"] = counter
             if not x.name.strip().lower() in self.files_to_ignore:
                 if x.is_dir():
                     self.directory_cache[scan_directory.strip().lower()]\
@@ -125,7 +99,6 @@ class   CachedDirectory:
                     data["file_extension"] = os.path.splitext\
                         (x.name)[1][1:].lower()
                     files[x.name.lower().strip()] = data
-                counter += 1
         self.directory_cache[scan_directory.strip().lower()]["files"] = files
         self.directory_cache[scan_directory.strip().lower()]\
                 ["dirs"] = directories
@@ -165,37 +138,79 @@ class   CachedDirectory:
             return True
     
     def smart_read(self, scan_directory):
+        """
+        This is a wrapper around the Read and changed functions.
+        
+        The scan_directory is passed in, converted to a normalized form,
+        and then checked to see if it exists in the cache.  
+        
+        If it doesn't exist (or is expired), then it is read.
+        
+        If it already exists *AND* has not expired, it is not
+        updated.
+        
+        Net affect, this will ensure the directory is in cache, and
+        update to date.
+        """
         scan_directory = os.path.realpath(scan_directory).lower().strip()
         if self.directory_changed(scan_directory):
-             self._scan_directory_list(scan_directory)
+            self._scan_directory_list(scan_directory)
              
         
-    def return_sortfiles(self, scan_directory, reverse=False):
+    def return_sort_name(self, scan_directory, reverse=False):
         """
-        Return sorted keys from the Directory cache for scan_directory
-        """
-        scan_directory = os.path.realpath(scan_directory).lower().strip()
-        keys = self.directory_cache[scan_directory]["files"].keys()
-        return sorted(keys, reverse=reverse)
-            
-    def return_sortdirs(self, scan_directory, reverse=False):
-        """
-        Return sorted keys from the Files cache for scan_directory
-        """
-        scan_directory = os.path.realpath(scan_directory).lower().strip()
-        keys = self.directory_cache[scan_directory]["dirs"].keys()
-        return sorted(keys, reverse=reverse)
+        Return sorted list(s) from the Directory Cache for the
+        Scanned directory, sorted by name.
         
-    def return_dir_count(self, scan_directory):
-        """
-        """
-        scan_directory = os.path.realpath(scan_directory).lower().strip()
-        return self.directory_cache[scan_directory]["number_dirs"]
-
-    def return_file_count(self, scan_directory):
-        """
+        Returns 2 tuples of date, T[0] - Files, and T[1] - Directories
+        which contain the data from the cached directory.
         """
         scan_directory = os.path.realpath(scan_directory).lower().strip()
-        return self.directory_cache[scan_directory]["number_files"]
+        files = self.directory_cache[scan_directory]["files"]
+        dirs = self.directory_cache[scan_directory]["dirs"]
+        sorted_files = sorted(files.items(), 
+                              key=lambda t: t[1]["filename"],
+                              reverse=reverse)
+        sorted_dirs = sorted(dirs.items(), 
+                             key=lambda t: t[1]["directoryname"],
+                             reverse=reverse)
+        return (sorted_files, sorted_dirs)
 
-                
+    def return_sort_lmod(self, scan_directory, reverse=False):
+        """
+        Return sorted list(s) from the Directory Cache for the
+        Scanned directory, sorted by Last Modified.
+        
+        Returns 2 tuples of date, T[0] - Files, and T[1] - Directories
+        which contain the data from the cached directory.
+        """
+        scan_directory = os.path.realpath(scan_directory).lower().strip()
+        files = self.directory_cache[scan_directory]["files"]
+        dirs = self.directory_cache[scan_directory]["dirs"]
+        sorted_files = sorted(files.items(), 
+                              key=lambda t: t[1]["raw_st_mtime"],
+                              reverse=reverse)
+        sorted_dirs = sorted(dirs.items(), 
+                             key=lambda t: t[1]["raw_st_mtime"],
+                             reverse=reverse)
+        return (sorted_files, sorted_dirs)
+
+    def return_sort_ctime(self, scan_directory, reverse=False):
+        """
+        Return sorted list(s) from the Directory Cache for the
+        Scanned directory, sorted by Creation Time.
+        
+        Returns 2 tuples of date, T[0] - Files, and T[1] - Directories
+        which contain the data from the cached directory.
+        """
+        scan_directory = os.path.realpath(scan_directory).lower().strip()
+        files = self.directory_cache[scan_directory]["files"]
+        dirs = self.directory_cache[scan_directory]["dirs"]
+        sorted_files = sorted(files.items(), 
+                              key=lambda t: t[1]["st_ctime"],
+                              reverse=reverse)
+        sorted_dirs = sorted(dirs.items(), 
+                             key=lambda t: t[1]["st_ctime"],
+                             reverse=reverse)
+        return (sorted_files, sorted_dirs)
+            
