@@ -272,8 +272,8 @@ class Cache(object):
                     os.rename(os.path.join(s_entry._path, orig_name),
                         os.path.join(os.path.realpath(scan_directory).strip(),
                          clean_name))
-                else:
-                    clean_name = s_entry.name
+            else:
+                clean_name = s_entry.name
 
             data.fq_filename = os.path.join(
                 os.path.realpath(scan_directory.strip()),
