@@ -236,97 +236,6 @@ class Cache(object):
 
 
 #####################################################
-    def clean_filenames(self, fqpathname):
-        """
-    Args:
-        fqpathname (str): The full qualified pathname to examine
-
-    Returns:
-        None
-
-    Check to see if any filenames in the ``fqpathname`` location need
-    to be scrubbed / cleaned.
-
-    This function uses the ``filter_filenames`` variable/pointer to
-    check and scrub the filenames.
-
-    If self.filter_filenames is set, this function will call
-    self.filter_filenames to test against the file and directory names.
-
-    This feature was added for the gallery, to automate the renaming
-    of the directories and files, to ensure that the files and directory
-    names are acceptable to the web server and web browser.
-
-    By setting a ``filter_filenames`` function, you can use this as you
-    choose.
-
-    By default, this is not turned on.  This is an opt-in feature.
-
-    code::
-
-        import common
-        import file_types
-        self.cdl = directory_caching.Cache()
-        self.cdl.files_to_ignore = file_types.files_to_ignore
-        self.cdl.acceptable_extensions = file_types.image_safe_files
-        self.cdl.filter_filenames = common.clean_filename2
-        print "Priming the cache for %s, please wait" %\
-            file_types.locations["albums_root"].lower().strip()
-        self.cdl.smart_read(
-            file_types.locations["albums_root"].lower().strip())
-        print "Pump primed."
-
-    After assigning self.cdl.filter_filenames, every time a directory is
-    examined by the caching engine, it will rename the files and directories
-    if an invalid filename or directory name is found.
-
-    This check is simply a comparison, the filename is passed to the cleaning
-    function, and if the returned filename is different, the file is renamed
-    to the new name.
-
-    code::
-
-        if orig_name[1].fq_filename != new_name:
-            os.rename(orig_name[1].fq_filename, new_name)
-
-    An example cleaning function, from the Gallery application.
-
-    code::
-
-        def clean_filename2(filename):
-        replacements = {'"':"`", "'":"`",
-                        ",":"", "#":"",
-                        "*":"", "@":"",
-                        ":":"-", "|":""}
-        filename = replace_all(urllib2.unquote(filename), replacements)
-            # Un"quotify" the URL / Filename
-        filename = unidecode.unidecode(filename)
-            # de-unicode the filename / url
-        filename, fileext = os.path.splitext(filename)
-        filename = filename.strip() + fileext.strip()
-            # remove extra spaces from filename and file extension.
-            # e.g.  "this is the filename .txt" -> "this is the filename.txt"
-        return filename
-
-
-        """
-        modified = False
-        if self.filter_filenames != None:
-            if self.directory_in_cache(fqpathname):
-                pass
-            else:
-                self.smart_read(fqpathname)
-
-            (files, dirs) = self.return_sort_name(scan_directory=fqpathname)
-
-            for orig_name in files+dirs:
-                new_name = self.filter_filenames(orig_name[1].fq_filename)
-                if orig_name[1].fq_filename != new_name:
-                    modified = True
-                    os.rename(orig_name[1].fq_filename, new_name)
-        if modified:
-            self._scan_directory_list(fqpathname)
-
 #####################################################
     def _scan_directory_list(self, scan_directory):
         """
@@ -339,7 +248,7 @@ class Cache(object):
         Scan the directory "scan_directory", and save it to the
         self.d_cache dictionary.
 
-        Low Level function, intended to be used by the populate function.
+        **Low Level function, intended to be used by the populate function.**
 
         scan_directory is matched absolutely, case sensitive,
         string is stripped(), but otherwise left alone.
@@ -357,44 +266,45 @@ class Cache(object):
             data = DirEntry()
             data.st = s_entry.lstat()
             if self.filter_filenames != None:
-                if s_entry.name != s_entry.name.strip():
-                    data.fq_filename = os.path.join(
-                        os.path.realpath(scan_directory),
-                        s_entry.name)
-                    os.rename(data.fq_filename, os.path.join(
-                        os.path.realpath(scan_directory).strip(),
-                        s_entry.name.strip()))
+                orig_name = s_entry.name
+                clean_name = self.filter_filenames(orig_name)
+                if orig_name != clean_name:
+                    os.rename(os.path.join(s_entry._path, orig_name),
+                        os.path.join(os.path.realpath(scan_directory).strip(),
+                         clean_name))
+                else:
+                    clean_name = s_entry.name
 
             data.fq_filename = os.path.join(
                 os.path.realpath(scan_directory.strip()),
-                s_entry.name.strip())
+                clean_name)
             data.parentdirectory = os.path.join(
                 os.path.split(scan_directory)[0:-1])
             data.human_st_mtime = time.asctime(
                 time.localtime(data.st[stat.ST_MTIME]))
-            if s_entry.name.strip().lower() in self.files_to_ignore:
+            if clean_name.strip().lower() in self.files_to_ignore:
                 continue
             if s_entry.is_dir():
                 data.filename = ""
-                data.directoryname = s_entry.name.strip()
+                data.directoryname = clean_name
                 data.dot_extension = ".dir"
                 data.file_extension = "dir"
 
                 (data.number_files,
                  data.number_dirs) = self._return_file_dir_count(\
                        data.fq_filename)
-                directories[s_entry.name.strip()] = data
+                directories[clean_name] = data
             else:
-                data.filename = s_entry.name.strip()
+                data.filename = clean_name
                 data.directoryname = scan_directory
                 data.dot_extension = string.lower(\
-                                os.path.splitext(s_entry.name)[1])
+                                os.path.splitext(clean_name)[1])
                 data.file_extension = data.dot_extension[1:]
                 if self.acceptable_extensions == []:
                     #
                     #   There are no non-acceptable files.
                     #
-                    files[s_entry.name.strip()] = data
+                    files[clean_name] = data
                 elif data.file_extension.lower() in self.acceptable_extensions:
                     #
                     #   Filter by extensions
@@ -404,7 +314,6 @@ class Cache(object):
         self.d_cache[norm_dir_name]["dirs"] = directories
         self.d_cache[norm_dir_name]["last_scanned_time"] = time.time()
         self.d_cache[norm_dir_name]["last_sort"] = None
-        self.clean_filenames(scan_directory)
         return
 
 #####################################################
@@ -630,8 +539,75 @@ class Cache(object):
     If it already exists *AND* has not expired, it is not
     updated.
 
-    Net affect, this will ensure the directory is in cache, and
-    update to date.
+    **Net affect, this will ensure the directory is in cache, and
+    update to date.**
+
+    In addition, the clean_filename function has been merged into
+    _scan_directory.  It will check to see if any filenames in the
+    ``scan_directory`` location need to be scrubbed / cleaned.
+
+    This function uses the ``filter_filenames`` variable/pointer to
+    check and scrub the filenames.
+
+    If self.filter_filenames is set, this function will call
+    self.filter_filenames to test against the file and directory names.
+
+    This feature was added for the gallery, to automate the renaming
+    of the directories and files, to ensure that the files and directory
+    names are acceptable to the web server and web browser.
+
+    By setting a ``filter_filenames`` function, you can use this as you
+    choose.
+
+    By default, this is not turned on.  This is an opt-in feature.
+
+    code::
+
+        import common
+        import file_types
+        self.cdl = directory_caching.Cache()
+        self.cdl.files_to_ignore = file_types.files_to_ignore
+        self.cdl.acceptable_extensions = file_types.image_safe_files
+        self.cdl.filter_filenames = common.clean_filename2
+        print "Priming the cache for %s, please wait" %\
+            file_types.locations["albums_root"].lower().strip()
+        self.cdl.smart_read(
+            file_types.locations["albums_root"].lower().strip())
+        print "Pump primed."
+
+    After assigning self.cdl.filter_filenames, every time a directory is
+    examined by the caching engine, it will rename the files and directories
+    if an invalid filename or directory name is found.
+
+    This check is simply a comparison, the filename is passed to the cleaning
+    function, and if the returned filename is different, the file is renamed
+    to the new name.
+
+    code::
+
+        if orig_name[1].fq_filename != new_name:
+            os.rename(orig_name[1].fq_filename, new_name)
+
+    An example cleaning function, from the Gallery application.
+
+    code::
+
+        def clean_filename2(filename):
+        replacements = {'"':"`", "'":"`",
+                        ",":"", "#":"",
+                        "*":"", "@":"",
+                        ":":"-", "|":""}
+        filename = replace_all(urllib2.unquote(filename), replacements)
+            # Un"quotify" the URL / Filename
+        filename = unidecode.unidecode(filename)
+            # de-unicode the filename / url
+        filename, fileext = os.path.splitext(filename)
+        filename = filename.strip() + fileext.strip()
+            # remove extra spaces from filename and file extension.
+            # e.g.  "this is the filename .txt" -> "this is the filename.txt"
+        return filename
+
+
         """
         scan_directory = os.path.realpath(scan_directory).strip()
         if self.directory_changed(scan_directory):
@@ -668,28 +644,26 @@ class Cache(object):
             files = self.d_cache[scan_directory]["files"]
             dirs = self.d_cache[scan_directory]["dirs"]
             if sort_by == SORT_BY_NAME:
-                self.d_cache[scan_directory]["files"] =\
-                    natsort.natsort(files.items(),
+                files = natsort.natsort(files.items(),
                                     key=lambda t: string.lower(t[1].filename),
                                     reverse=reverse)
-                self.d_cache[scan_directory]["dirs"] =\
-                    natsort.natsort(dirs.items(),
+                dirs = natsort.natsort(dirs.items(),
                                     key=lambda t: string.lower(\
                                         t[1].directoryname),
                                     reverse=reverse)
             elif sort_by == SORT_BY_MODIFIED:
-                self.d_cache[scan_directory]["files"] = sorted(files.items(),\
-                    key=lambda t: t[1].st.st_mtime, reverse=reverse)
-                self.d_cache[scan_directory]["dirs"] = sorted(dirs.items(),\
-                    key=lambda t: t[1].st.st_mtime, reverse=reverse)
+                files = sorted(files.items(),\
+                               key=lambda t: t[1].st.st_mtime, reverse=reverse)
+                dirs = sorted(dirs.items(),\
+                               key=lambda t: t[1].st.st_mtime, reverse=reverse)
             elif sort_by == SORT_BY_CREATION:
-                self.d_cache[scan_directory]["files"] = sorted(files.items(),\
-                    key=lambda t: t[1].st.st_ctime, reverse=reverse)
-                self.d_cache[scan_directory]["dirs"] = sorted(dirs.items(),\
-                    key=lambda t: t[1].st.st_ctime, reverse=reverse)
+                files = sorted(files.items(),\
+                               key=lambda t: t[1].st.st_ctime, reverse=reverse)
+                dirs = sorted(dirs.items(),\
+                               key=lambda t: t[1].st.st_ctime, reverse=reverse)
 
-        return (self.d_cache[scan_directory]["files"],
-                self.d_cache[scan_directory]["dirs"])
+            self.d_cache[scan_directory]["sort_index"] = files, dirs
+        return self.d_cache[scan_directory]["sort_index"]
 
 
 #####################################################
