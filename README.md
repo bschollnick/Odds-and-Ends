@@ -7,4 +7,6 @@ This is a holding area for packages that are in development.  The Directory Cach
 
 The gallery application will graduating to v1.00 status shortly.  The Directory Caching package, is used by the gallery, for it caching performance.
 
+Directory Caching has moved to a separate repository -  https://github.com/bschollnick/Directory_Caching
+
 Please see the Documentation at https://bschollnick.github.io
